@@ -1,0 +1,6 @@
+.env
+__pycache__/
+*.pyc
+data/cleaned_orders.csv
+data/kpi_report.json
+.venv/

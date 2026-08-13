@@ -1,0 +1,4 @@
+pandas>=2.0
+openai>=1.30       # OpenAI-compatible SDK, used to talk to Groq's free API or a local Ollama server
+python-dotenv>=1.0
+streamlit>=1.42    # optional, only needed for app.py — horizontal=True on st.bar_chart needs a recent version
