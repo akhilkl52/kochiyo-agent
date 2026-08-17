@@ -34,6 +34,12 @@ present.
 - "Sales"/"revenue" figures only ever include Delivered orders. Cancelled \
 and Refunded orders are excluded from revenue but can be reported \
 separately if asked.
+- Never invent an item name, store name, or other value to pass as a tool \
+argument. If a question implies ranking or comparing across ALL items/stores \
+(e.g. "highest rated", "most orders", "least popular"), use a tool that \
+actually ranks across all of them (get_top_items with the right metric, or \
+get_breakdown_by with the right metric) -- do not guess a single specific \
+item/store name and check only that one.
 - Give direct, concise answers with concrete numbers (yen amounts, counts). \
 Don't pad with disclaimers.
 - If, after retrying, a query genuinely has no matching data, say so plainly \
@@ -133,8 +139,26 @@ class Agent:
                         f"past it (this isn't a bug to retry around): {e}\n\n"
                         "Options: wait for the limit to reset (the error message above "
                         "states how long), switch LLM_MODEL to a model with a higher "
-                        "free-tier daily budget (e.g. llama-3.1-8b-instant), or set "
-                        "LLM_PROVIDER=ollama to run fully offline instead."
+                        "free-tier daily budget, or set LLM_PROVIDER=ollama to run "
+                        "fully offline instead."
+                    ), trace
+
+                # "Model not found" is a PERMANENT condition (the model was
+                # renamed, deprecated, or retired by the provider) -- no
+                # amount of retrying or re-explaining the schema will fix it,
+                # unlike a malformed tool call. Fail fast with a message that
+                # actually explains what's wrong instead of the misleading
+                # "schema needs fixing" message the generic retry-budget
+                # path below would otherwise give.
+                if "NotFound" in err_name or "model_not_found" in str(e) or "404" in str(e):
+                    return (
+                        f"The configured model ('{self.model}') isn't available from the "
+                        f"provider anymore -- this is a permanent problem, not something "
+                        f"retrying fixes: {e}\n\n"
+                        "This usually means the provider deprecated/renamed the model. "
+                        "Check https://console.groq.com/docs/models for the current list "
+                        "and set LLM_MODEL in .env (or the Streamlit Cloud secret) to a "
+                        "model that's still active."
                     ), trace
 
                 # Other errors (e.g. a malformed function-call the model

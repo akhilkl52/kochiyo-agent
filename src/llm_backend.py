@@ -9,7 +9,7 @@ that just changes base_url/model depending on env vars:
       Sign up at https://console.groq.com, create an API key, set:
         GROQ_API_KEY=...
       Free tier is generous (dozens of requests/min) and plenty for this
-      project. Model defaults to llama-3.3-70b-versatile, which supports
+      project. Model defaults to openai/gpt-oss-20b, which has strong tool
       tool calling well.
 
   LLM_PROVIDER=ollama              -> fully local, zero signup, zero API key
@@ -25,14 +25,15 @@ from __future__ import annotations
 import os
 
 DEFAULT_MODELS = {
-    # llama-3.1-8b-instant has a much more generous free-tier daily token
-    # budget (500K TPD) than llama-3.3-70b-versatile (100K TPD) -- easy to
-    # exhaust the 70b model's daily limit after a handful of test questions,
-    # since each tool-calling round trip resends the growing conversation
-    # history. 8b is plenty capable for this project's structured tool
-    # calling. Override with LLM_MODEL=llama-3.3-70b-versatile if you want
-    # the larger model and are mindful of the lower daily cap.
-    "groq": "llama-3.1-8b-instant",
+    # Groq deprecated llama-3.1-8b-instant and llama-3.3-70b-versatile,
+    # shutting them down entirely on August 16, 2026 -- if you see a
+    # "model does not exist" 404 for either of those names, that's why.
+    # openai/gpt-oss-20b is Groq's own recommended replacement: strong tool-
+    # calling support, fast, and on the free tier. If Groq retires this one
+    # too in the future, check https://console.groq.com/docs/models for the
+    # current list and override via LLM_MODEL in .env rather than editing
+    # this file.
+    "groq": "openai/gpt-oss-20b",
     "ollama": "qwen2.5:7b",
 }
 

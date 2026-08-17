@@ -72,6 +72,66 @@ get_top_items(year=2026, month=6)  -> matched_rows: 282, Tonkotsu Ramen on top  
 
 Verified in `tests/test_pipeline.py` without needing a live LLM call.
 
+This is also a good real-world example of a distinct failure mode from the
+"empty result" case above: after the *first* successful tool call, the SDK's
+tool-call objects were being appended straight into the conversation history
+instead of converted to plain JSON-safe dicts. That corrupted history caused
+every subsequent round to fail silently (a 400 the code caught and quietly
+retried), burning through the whole tool-call budget with zero visible
+signal — the agent would eventually give up with "I wasn't able to finish
+reasoning," having actually gotten the right tool result on round 1 and then
+never recovering. Fixed by explicitly serializing `tool_calls` on the way
+into message history, and covered by `tests/test_agent_message_history.py`,
+which simulates a full two-round exchange with a fake client and asserts the
+history stays JSON-serializable at every round — this test fails against
+the old code and passes against the fix, confirmed by deliberately
+reverting the fix and re-running it.
+
+## A real gap found through live testing (and how it was closed)
+
+During live testing (not something I anticipated in advance), asking
+*"which item has the highest rating?"* produced a **confidently wrong-shaped
+answer**: the agent searched for an item literally named "highest rated
+item" (no match), then pivoted to checking "ramen" specifically, and
+reported its rating as if that answered the question — without ever
+comparing it against the other 13 menu items. It happened to be correct
+(Tonkotsu Ramen genuinely is the top-rated item, 4.48 vs. Green Tea's 4.47),
+but only by coincidence, likely because "Tonkotsu Ramen" had come up earlier
+in the same conversation as the best-seller by *quantity* — a completely
+different metric it seems to have latched onto. The process was wrong even
+though the output happened to be right, which is a worse failure mode than
+an obviously-wrong answer, because there was no way to tell it apart from a
+correctly-reasoned one just by reading it.
+
+The root cause: `get_top_items` and `get_breakdown_by` only ranked by
+revenue/quantity — there was no tool that actually ranked all items by
+rating, or all stores by order count, so the model improvised by picking
+one candidate and checking only that one. Fixed by adding a `metric` option
+to both tools (`rating` and `order_count` respectively) so a real
+across-the-board ranking exists, and adding a system-prompt rule telling the
+agent to use a ranking tool rather than guess a single name to check when a
+question implies comparing across everything. Covered by two new checks in
+`tests/test_pipeline.py`, including a manual pandas recompute confirming
+Tonkotsu Ramen's #1 rating is genuine and not just what the model happened
+to guess.
+
+## A note on free-model churn (found live, two days after initial hosting)
+
+Groq deprecated `llama-3.1-8b-instant` (this project's original default) and
+shut it down entirely on **August 16, 2026** — discovered when the hosted
+app started returning `model_not_found` 404s the next day, with zero code
+changes on my end. Free-tier LLM providers rotate their model lineup
+faster than most other infrastructure; a project like this can't assume
+today's model name will exist next month. Two things were fixed as a
+result: the default model was switched to `openai/gpt-oss-20b` (Groq's own
+recommended replacement), and the agent's error handling was corrected to
+recognize "model not found" as a **permanent** condition rather than
+retrying it — the original code mistakenly retried this three times and
+reported a misleading "the tool's schema needs fixing" message instead of
+the real problem. If this happens again in the future, `LLM_MODEL` in `.env`
+(or the Streamlit Cloud secret) is the one place to change — no code edits
+needed.
+
 ## Data issues found in the CSV (and how they were handled)
 
 The file (1091 raw rows) is messy in several independent ways:
@@ -169,10 +229,9 @@ does.
 - "What's our cancellation rate?"
 - "Which store makes the most money?"
 - "How much revenue comes from PayPay vs cash?"
-- A question not specifically designed for: e.g. "Is LINE Pay our least
-  popular payment method?" — no dedicated tool for "least popular," but the
-  agent composes `get_breakdown_by(dimension="payment_method")` and reads
-  off the bottom of the sorted list itself.
+- A question not specifically designed for: "least selling item," "names of
+  the stores," "which item has the highest rating" — the last one is
+  documented above as a real gap that live testing found and I closed.
 
 ## Hosting
 
